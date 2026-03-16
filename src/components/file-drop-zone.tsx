@@ -66,9 +66,9 @@ export default function FileDropZone({ onTransactionsAdded }: FileDropZoneProps)
       };
 
       // Step 2 — categorise (we need to give each transaction a temp id)
-      const withTempIds: Transaction[] = extracted.map((t, i) => ({
+      const withTempIds: Transaction[] = extracted.map((t) => ({
         ...t,
-        id: `temp-${i}`,
+        id: crypto.randomUUID(),
       }));
 
       const categoriseRes = await fetch('/api/categorise', {

@@ -26,33 +26,47 @@ Clasifica cada movimiento bancario en una de estas categorías:
 - Ahorro (20%): transferencias de ahorro, inversiones, depósitos
 Responde con el JSON exacto solicitado, incluyendo sub-categoria (string corto descriptivo).`;
 
+const CHUNK_SIZE = 50;
+
 /**
  * Classify extracted transactions into the 50/30/20 categories using the LLM.
  */
 export async function categoriseTransactions(
   transactions: Transaction[],
 ): Promise<CategorisedTransaction[]> {
-  const { object } = await generateObject({
-    model: ollama(MODEL),
-    schema: CategorisedArraySchema,
-    system: SYSTEM_PROMPT,
-    prompt: `Clasifica los siguientes movimientos bancarios:\n${JSON.stringify(transactions)}`,
-  });
+  const results: CategorisedTransaction[] = [];
 
-  // Normalise sub-categoria / subCategoria field
-  return object.transactions.map((t) => {
-    const raw = t as Record<string, unknown>;
-    const subCategoria =
-      (raw['subCategoria'] as string | undefined) ??
-      (raw['sub-categoria'] as string | undefined) ??
-      '';
-    return {
-      id: t.id,
-      fecha: t.fecha,
-      concepto: t.concepto,
-      importe: t.importe,
-      categoria: t.categoria,
-      subCategoria,
-    } satisfies CategorisedTransaction;
-  });
+  for (let i = 0; i < transactions.length; i += CHUNK_SIZE) {
+    const chunk = transactions.slice(i, i + CHUNK_SIZE);
+    try {
+      const { object } = await generateObject({
+        model: ollama(MODEL, { numCtx: 16384 }),
+        schema: CategorisedArraySchema,
+        system: SYSTEM_PROMPT,
+        prompt: `Clasifica los siguientes movimientos bancarios:\n${JSON.stringify(chunk)}`,
+      });
+      results.push(...object.transactions.map((t) => {
+        const raw = t as Record<string, unknown>;
+        const subCategoria =
+          (raw['subCategoria'] as string | undefined) ??
+          (raw['sub-categoria'] as string | undefined) ??
+          '';
+        return {
+          id: t.id,
+          fecha: t.fecha,
+          concepto: t.concepto,
+          importe: t.importe,
+          categoria: t.categoria,
+          subCategoria,
+        } satisfies CategorisedTransaction;
+      }));
+    } catch (error) {
+      console.error(`Error processing categorisation chunk ${i / CHUNK_SIZE + 1}:`, error);
+      // Skip this chunk
+    }
+    // Small delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  return results;
 }
